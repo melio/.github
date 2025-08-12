@@ -1,0 +1,64 @@
+name: Scan melio package usage
+
+on:
+  workflow_dispatch:
+    inputs:
+      owner:
+        description: "GitHub organization or username to scan"
+        required: true
+        type: string
+      include_private:
+        description: "Include private repositories (token must have access)"
+        required: false
+        default: true
+        type: boolean
+      include_archived:
+        description: "Include archived repositories"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      # Prefer a custom secret (e.g. GH_TOKEN) if present, otherwise fall back to the default GITHUB_TOKEN
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+      OWNER: ${{ inputs.owner }}
+      INCLUDE_PRIVATE: ${{ inputs.include_private }}
+      INCLUDE_ARCHIVED: ${{ inputs.include_archived }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run scan
+        run: |
+          python scripts/scan_melio_packages.py \
+            --owner "$OWNER" \
+            $( [ "$INCLUDE_PRIVATE" = "true" ] && echo "--include-private" ) \
+            $( [ "$INCLUDE_ARCHIVED" = "true" ] && echo "--include-archived" ) \
+            --out-file melio_package_usage.csv
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: melio-package-usage
+          path: melio_package_usage.csv
+
+      - name: Append results to summary
+        if: always()
+        run: |
+          echo "Generated CSV: melio_package_usage.csv" >> "$GITHUB_STEP_SUMMARY"
